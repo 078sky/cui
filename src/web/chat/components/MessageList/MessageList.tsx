@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { MessageItem } from './MessageItem';
 import type { ChatMessage, ToolResult } from '../../types';
 import styles from './MessageList.module.css';
@@ -33,26 +33,31 @@ export const MessageList: React.FC<MessageListProps> = ({
   }, [messages]);
 
   // Filter out user messages that only contain tool_result blocks
-  const displayMessages = messages.filter(message => {
-    if (message.type === 'user' && Array.isArray(message.content)) {
-      const allToolResults = message.content.every((block: any) => block.type === 'tool_result');
-      if (allToolResults) {
-        return false; // Don't display tool result messages
+  const displayMessages = useMemo(() => {
+    return messages.filter(message => {
+      if (message.type === 'user' && Array.isArray(message.content)) {
+        const allToolResults = message.content.every((block: any) => block.type === 'tool_result');
+        if (allToolResults) {
+          return false; // Don't display tool result messages
+        }
       }
-    }
-    return true;
-  });
+      return true;
+    });
+  }, [messages]);
 
   // Group consecutive messages by type to create message groups
-  const messageGroups: Array<{type: 'user' | 'assistant' | 'error' | 'system', messages: ChatMessage[]}> = [];
-  displayMessages.forEach((message) => {
-    const lastGroup = messageGroups[messageGroups.length - 1];
-    if (lastGroup && lastGroup.type === message.type) {
-      lastGroup.messages.push(message);
-    } else {
-      messageGroups.push({ type: message.type, messages: [message] });
-    }
-  });
+  const messageGroups = useMemo(() => {
+    const groups: Array<{type: 'user' | 'assistant' | 'error' | 'system', messages: ChatMessage[]}> = [];
+    displayMessages.forEach((message) => {
+      const lastGroup = groups[groups.length - 1];
+      if (lastGroup && lastGroup.type === message.type) {
+        lastGroup.messages.push(message);
+      } else {
+        groups.push({ type: message.type, messages: [message] });
+      }
+    });
+    return groups;
+  }, [displayMessages]);
 
   if (displayMessages.length === 0 && !isLoading) {
     return (
@@ -105,18 +110,20 @@ export const MessageList: React.FC<MessageListProps> = ({
         
         {!isLoading && isStreaming && messageGroups.length > 0 && (() => {
           // Check if any tool use blocks are currently loading
-          const hasLoadingToolUse = displayMessages.some(message => {
-            if (message.type === 'assistant' && Array.isArray(message.content)) {
-              return message.content.some((block: any) => {
-                if (block.type === 'tool_use') {
-                  const toolResult = toolResults[block.id];
-                  return !toolResult || toolResult.status === 'pending';
-                }
-                return false;
-              });
-            }
-            return false;
-          });
+          const hasLoadingToolUse = useMemo(() => {
+            return displayMessages.some(message => {
+              if (message.type === 'assistant' && Array.isArray(message.content)) {
+                return message.content.some((block: any) => {
+                  if (block.type === 'tool_use') {
+                    const toolResult = toolResults[block.id];
+                    return !toolResult || toolResult.status === 'pending';
+                  }
+                  return false;
+                });
+              }
+              return false;
+            });
+          }, [displayMessages, toolResults]);
           
           // Only show streaming dots when no tool use icons are blinking
           return !hasLoadingToolUse ? (
